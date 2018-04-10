@@ -83,6 +83,8 @@ void setup() {
 
 char displaybuffer[4] = {' ', ' ', ' ', ' '};
 
+char* disp = (char*)malloc(30 * sizeof(char));
+
 //float voltage, Rsense, logR;
 float degreesF = 68.0;
 float prev = 68.0;    // record previous temp to filter large jumps in sensor
@@ -291,7 +293,6 @@ void vpins(void)
 {
   Blynk.virtualWrite(V0, temp);
   Blynk.virtualWrite(V1, setpoint);
-  char* disp = (char*)malloc(30 * sizeof(char));
   if (alarmOn)
   {
     sprintf(disp, "Alarm is set to %i:%2.2i.", startTimeInSecs/3600, (startTimeInSecs % 3600) / 60);
