@@ -4,26 +4,29 @@ home smart thermostat
 documentation coming soon...
 */
 
+#include "credentials.h"
 #include <Wire.h>                     // need for I2C
 #include <Adafruit_GFX.h>             // need to include this for some reason
 #include "Adafruit_LEDBackpack.h"     // library for the display
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
+#include <TimeLib.h>
+#include <WidgetRTC.h>
 
 
 //GPIO pins for encoder and switch
-#define PIN_ENCODER_A      D3//5    // D3
-#define PIN_ENCODER_B      D5//4    // D5
-#define PIN_ENCODER_SWITCH D4//2    // D4
+#define PIN_ENCODER_A      D3
+#define PIN_ENCODER_B      D5
+#define PIN_ENCODER_SWITCH D4
 
 // You should get Auth Token in the Blynk App.
 // Go to the Project Settings (nut icon).
-char auth[] = "paste your auth token here";
+char auth[] = blynkcred;
 
-// Paste in your WiFi credentials.
+// Get your WiFi credentials from credentials.h
 // Set password to "" for open networks.
-char ssid[] = "";
-char pass[] = "";
+char ssid[] = ssidcred;
+char pass[] = passcred;
 
 // Some initial states for the encoder
 static uint8_t enc_prev_pos   = 0;
@@ -33,12 +36,14 @@ static char    sw_was_pressed = 0;
 //GPIO pins for temperature input and relay out
 const int temperaturePin = 0;
 const int relayPin = D7;
-int setpoint;
-
+int setpoint, alarmOn;
+long startTimeInSecs;
 
 Adafruit_AlphaNum4 alpha4 = Adafruit_AlphaNum4();   //create object for the 4 digit display
 
 BlynkTimer timer;
+
+WidgetRTC rtc;
 
 
 void setup() {
@@ -69,9 +74,12 @@ void setup() {
   }
 
   setpoint = 68;    // default setpoint to something reasonable (degrees F)
+  alarmOn = 0;      // initialize alarm flag
 
   
   Blynk.begin(auth, ssid, pass);
+
+  setSyncInterval(10 * 60);   // Sync interval in sec, 10 min
 
   timer.setInterval(10L, thermostat);
   timer.setInterval(1000L, vpins);
@@ -90,6 +98,7 @@ float B = .000234125;
 float C = .0000000876741;
 bool heat = false;    // State, is heat on or off
 int temp;
+long tnow;
 
 void thermostat() {
  
@@ -213,6 +222,15 @@ void thermostat() {
     }
   }   //end of big encoder loop
 
+  // Timer/alarm functionality
+  time_t t = now();
+  tnow = hour(t) * 3600 + minute(t) * 60 + second(t);  // time in seconds since midnight
+  if (tnow == startTimeInSecs && alarmOn)
+  {
+    setpoint = 68;
+    alarmOn = 0;
+  }
+  
   // Reading the thermistor using the Steinhart–Hart equation
   voltage = getVoltage(temperaturePin);
   Rsense = 10000*voltage/(3.3-voltage);
@@ -253,16 +271,19 @@ void thermostat() {
   Serial.print("  delta: ");
   Serial.print(delta);
   Serial.print("  deg F: ");
-  Serial.println(degreesF);
-
-
-  int zero = 48;      //48 is zero on ascii table
+  Serial.print(degreesF);
+  Serial.print("  alarm: ");
+  Serial.print(alarmOn);
+  Serial.print("  time now: ");
+  Serial.print(tnow);
+  Serial.print("  alm time: ");
+  Serial.println(startTimeInSecs);
   
   // scroll down display
-  displaybuffer[0] = setpoint / 10 + zero;    //Tens place
-  displaybuffer[1] = setpoint % 10 + zero;    //Ones place
-  displaybuffer[2] = temp / 10 + zero;        //Tens place
-  displaybuffer[3] = temp % 10 + zero;        //Ones place
+  displaybuffer[0] = setpoint / 10 + '0';    //Tens place
+  displaybuffer[1] = setpoint % 10 + '0';    //Ones place
+  displaybuffer[2] = temp / 10 + '0';        //Tens place
+  displaybuffer[3] = temp % 10 + '0';        //Ones place
   
   // set every digit to the buffer
   alpha4.writeDigitAscii(0, displaybuffer[0]);
@@ -272,28 +293,54 @@ void thermostat() {
 
   // write it out!
   alpha4.writeDisplay();
- 
-  //delay(100); // repeat once per second (change as you wish!)
 
-  
 }
 
 void vpins(void)
 {
   Blynk.virtualWrite(V0, temp);
   Blynk.virtualWrite(V1, setpoint);
+  char* disp = (char*)malloc(50 * sizeof(char));
+  if (alarmOn)
+  {
+    sprintf(disp, "Alarm is set to %i:%2.2i.", startTimeInSecs/3600, (startTimeInSecs % 3600) / 60);
+  }
+  else
+  {
+    sprintf(disp, "Alarm is off.");
+  }
+  Blynk.virtualWrite(V5, disp);
+  Serial.println(disp);
+  
 }
 
+// get the setpoint from the slider in Blynk app
 BLYNK_WRITE(V2)
 {
-  int v2pin = param.asInt();
-  setpoint = v2pin;
+  setpoint = param.asInt();
+}
+
+// Get the time input from Blynk app
+BLYNK_WRITE(V3)
+{
+  startTimeInSecs = param[0].asLong();
+}
+
+// Get alarm on/off button from Blynk app
+BLYNK_WRITE(V4)
+{
+  alarmOn = param.asInt();
 }
 
 float getVoltage(int pin)
 { 
   return (analogRead(pin) * 3.3/1023);
-  
+}
+
+BLYNK_CONNECTED()
+{
+  // Synchronize time on connection
+  rtc.begin();
 }
 
 void loop()
