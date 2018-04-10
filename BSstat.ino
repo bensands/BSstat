@@ -18,15 +18,10 @@ documentation coming soon...
 #define PIN_ENCODER_A      D3
 #define PIN_ENCODER_B      D5
 #define PIN_ENCODER_SWITCH D4
-
-// You should get Auth Token in the Blynk App.
-// Go to the Project Settings (nut icon).
-char auth[] = blynkcred;
-
-// Get your WiFi credentials from credentials.h
-// Set password to "" for open networks.
-char ssid[] = ssidcred;
-char pass[] = passcred;
+// A, B, C are thermistor constants
+#define A .001129148
+#define B .000234125
+#define C .0000000876741
 
 // Some initial states for the encoder
 static uint8_t enc_prev_pos   = 0;
@@ -76,8 +71,8 @@ void setup() {
   setpoint = 68;    // default setpoint to something reasonable (degrees F)
   alarmOn = 0;      // initialize alarm flag
 
-  
-  Blynk.begin(auth, ssid, pass);
+  // these will come from credentials.h
+  Blynk.begin(blynkcred, ssidcred, passcred);
 
   setSyncInterval(10 * 60);   // Sync interval in sec, 10 min
 
@@ -88,17 +83,13 @@ void setup() {
 
 char displaybuffer[4] = {' ', ' ', ' ', ' '};
 
-float voltage, Rsense, logR;
+//float voltage, Rsense, logR;
 float degreesF = 68.0;
 float prev = 68.0;    // record previous temp to filter large jumps in sensor
 
-// A, B, C are thermistor constants
-float A = .001129148;
-float B = .000234125;
-float C = .0000000876741;
 bool heat = false;    // State, is heat on or off
 int temp;
-long tnow;
+int tnow;
 
 void thermostat() {
  
@@ -232,10 +223,10 @@ void thermostat() {
   }
   
   // Reading the thermistor using the Steinhart–Hart equation
-  voltage = getVoltage(temperaturePin);
-  Rsense = 10000*voltage/(3.3-voltage);
-  logR = log(Rsense);
-  degreesF = 1 / (A + B * logR + C * logR * logR * logR) - 273.15;
+  degreesF = getVoltage(temperaturePin);
+  degreesF = 10000*degreesF/(3.3-degreesF);
+  degreesF = log(degreesF);
+  degreesF = 1 / (A + B * degreesF + C * degreesF * degreesF * degreesF) - 273.15;
   degreesF = degreesF * 1.8 + 32;
   float stp = 0.1;
   degreesF = (prev + degreesF)/2;
@@ -264,10 +255,10 @@ void thermostat() {
     heat = false;
     digitalWrite(relayPin, LOW);
   }
-  Serial.print("voltage: ");
-  Serial.print(voltage);
-  Serial.print("  resistance: ");
-  Serial.print(Rsense);  
+  //Serial.print("voltage: ");
+  //Serial.print(voltage);
+  //Serial.print("  resistance: ");
+  //Serial.print(Rsense);  
   Serial.print("  delta: ");
   Serial.print(delta);
   Serial.print("  deg F: ");
@@ -300,7 +291,7 @@ void vpins(void)
 {
   Blynk.virtualWrite(V0, temp);
   Blynk.virtualWrite(V1, setpoint);
-  char* disp = (char*)malloc(50 * sizeof(char));
+  char* disp = (char*)malloc(30 * sizeof(char));
   if (alarmOn)
   {
     sprintf(disp, "Alarm is set to %i:%2.2i.", startTimeInSecs/3600, (startTimeInSecs % 3600) / 60);
